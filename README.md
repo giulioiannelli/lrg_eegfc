@@ -13,19 +13,15 @@ git fetch origin
 git merge origin/main
 ```
 ### prepare the conda environment
-Create the environment `lrgsgenv` as from file `lrgsgenv.yml` in 
+Create a custom conda environment, e.g. `lapbrain`,
 ```
 cd lrgsglib-public
-conda env create -f lrgsgenv.yml
-```
-Then if you want to continue working on a custom conda environment, e.g. `lapbrain`, do
-```
-conda env update -n lapbrain -f lrgsgenv.yml
+conda env create -n lapbrain -f lrgsgenv.yml
 ```
 ### configure with make
 ```
 cd lrgsglib-public
-make all
+make CONDA_ENV_NAME=lapbrain
 ```
 ### install `lrgsglib` in editable mode
 ```
