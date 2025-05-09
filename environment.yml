@@ -1,0 +1,7 @@
+name: lapbrain
+channels:
+  - defaults
+dependencies:
+  - numpy
+  - python
+  - scipy
