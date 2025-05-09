@@ -1,0 +1,3 @@
+[submodule "lrgsglib-public"]
+	path = lrgsglib-public
+	url = https://github.com/giulioiannelli/lrgsglib-public
