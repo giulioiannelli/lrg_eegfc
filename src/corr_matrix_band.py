@@ -44,7 +44,7 @@ def compute_and_save(patient: str, phase: str, band: str, filttime: int,
         out_dir.mkdir(parents=True, exist_ok=True)
         per_band_corr.mkdir(parents=True, exist_ok=True)
 
-        log_file = out_dir / f'{phase}_{band}.log'
+        log_file = out_dir / f'{band}_{phase}.log'
         logging.basicConfig(filename=str(log_file), level=logging.INFO,
                             format='%(asctime)s %(levelname)s: %(message)s')
         logging.info(f"Starting computation for {patient} {phase} {band}")
@@ -52,17 +52,20 @@ def compute_and_save(patient: str, phase: str, band: str, filttime: int,
         data = load_data(patient, phase, mat_path)
         if filttime > 0:
             data = data[:, :filttime]
-        filt = bandpass_sos(data, *BRAIN_BANDS[band], sample_rate, filter_order)
+        filt = bandpass_sos(data, BRAIN_BANDS[band][0], BRAIN_BANDS[band][1], sample_rate, filter_order)
         logging.info(f"Data shape after trim: {data.shape}")
         
         C_filt = np.abs(np.corrcoef(filt))
-        C_filt, eigvals_C, eigvecs_C, lambda_min, lambda_max, signal_mask = clean_correlation_matrix(C_filt)
-        logging.info(f"Cleaned correlation matrix: eigenvalues range [{lambda_min}, {lambda_max}]")
+        # C_filt, eigvals_C, eigvecs_C, lambda_min, lambda_max, signal_mask = clean_correlation_matrix(C_filt)
+        # logging.info(f"Cleaned correlation matrix: eigenvalues range [{lambda_min}, {lambda_max}]")
         np.fill_diagonal(C_filt, 0)
         G_filt = nx.from_numpy_array(C_filt)
         logging.info(f"Computed filtered correlation for band {band}")
+        Th, Einf, Pinf = compute_threshold_stats(G_filt)
+        plt.plot(Th, Einf, label='Einf')
+        plt.plot(Th, Pinf, label='Pinf')
+        plt.show()
         try:
-            Th, Einf, Pinf = compute_threshold_stats(G_filt)
             Pinf_diff = np.diff(Pinf)
             jumps = np.where(Pinf_diff != 0)[0]
             th = Th[jumps[1]]
@@ -82,7 +85,7 @@ def plot_corr_matrix(matrix: np.ndarray, patient: str, phase: str, band: str):
     plt.imshow(matrix, vmin=-1, vmax=1)
     plt.colorbar()
     plt.title(f'{patient} {phase} {band}')
-    plt.savefig(out_dir / f'{phase}_{band}_corr.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_corr.pdf')
     plt.close()
     logging.info("Saved correlation plot")
 
@@ -100,7 +103,7 @@ def plot_entropy(G: nx.Graph, steps: int, patient: str, phase: str, band: str):
     plt.ylabel('Normalized Values')
     plt.legend()
     plt.title(f'Entropy Metrics {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{phase}_{band}_entropy.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf')
     plt.close()
     logging.info("Saved entropy plot")
 
@@ -120,7 +123,7 @@ def plot_entropy(G: nx.Graph, steps: int, patient: str, phase: str, band: str):
     plt.legend()
     plt.title(f'Entropy Metrics {patient} {phase} {band}')
     plt.xscale('log')
-    plt.savefig(out_dir / f'{phase}_{band}_entropy.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf')
     plt.close()
     logging.info("Saved entropy plot")
 
@@ -143,7 +146,7 @@ def plot_dendrogram(linkage_matrix, labels, threshold, ch_int_name_map, patient:
     tmax = linkage_matrix[::, 2][-1] + 0.1*linkage_matrix[::, 2][-1]
     ax.set_xlim(tmin,tmax)
     plt.title(f'Dendrogram {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{phase}_{band}_dendrogram.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_dendrogram.pdf')
     fig.tight_layout
     plt.close()
     logging.info("Saved dendrogram plot")
@@ -158,12 +161,11 @@ def plot_graph(GG: nx.Graph, dendro: dict, patient: str, phase: str, band: str, 
     node_colors = [leaf_label_colors[label] for label in relabel_list]
     widths = [GG[u][v]['weight'] for u, v in GG.edges()]
     ch_int_name_map_ = {k: ch_int_name_map[k] for k in list(GG.nodes())}
-    pos = nx.spring_layout(GG, seed=5)
-    nx.draw(GG, pos=pos, ax=ax, node_size=80, font_size=10,
+    nx.draw(GG, ax=ax, node_size=80, font_size=10,
             width=widths, node_color=node_colors,
             alpha=0.7, with_labels=True, labels=ch_int_name_map_)
     plt.title(f'Network Graph {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{phase}_{band}_graph.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_graph.pdf')
     plt.close()
     logging.info("Saved graph plot")
 
@@ -171,7 +173,6 @@ def main():
     mat_path = Path('data') / 'stereoeeg_patients'
     ch_names = loadmat(mat_path / 'ChannelNames.mat')
     ch_names = [name[0] for name in ch_names['ChannelNames'][0]]
-    ch_int_name_map = {i: name for i, name in enumerate(ch_names)}
     parser = get_parser()
     args = parser.parse_args()
     if args.plot_all:
@@ -183,21 +184,28 @@ def main():
         args.patient, args.phase, args.band,
         args.filttime, args.sample_rate, args.filter_order
     )
+    ch_int_name_map = {i: name for i, name in enumerate(ch_names)}
+    if len(ch_int_name_map) != C_clean.shape[0]:
+        while len(ch_int_name_map) < C_clean.shape[0]:
+            ch_int_name_map[len(ch_int_name_map)] = f'Ch{len(ch_int_name_map)}'
     if args.plot_corr_mat:
         plot_corr_matrix(C_clean, args.patient, args.phase, args.band)
     if args.plot_entropy:
         plot_entropy(G, args.entropy_steps, args.patient, args.phase, args.band)
     dendro = None
     if args.plot_dendrogram or args.plot_graph:
-        spec, L, rho, Trho, tau = compute_laplacian_properties(G)
+        GG = get_giant_component(G)
+        spec, L, rho, Trho, tau = compute_laplacian_properties(GG)
         dists = squareform(Trho)
-        Z, labels, tmax = compute_normalized_linkage(dists, G)
+        # find matrix indices where the value is not finite
+        bad_idx = np.where(~np.isfinite(dists))[0]
+        Z, labels, tmax = compute_normalized_linkage(dists, GG)
         th, *_ = compute_optimal_threshold(Z)
     if args.plot_dendrogram:
         dendro = plot_dendrogram(Z, labels, th, ch_int_name_map,
                                  args.patient, args.phase, args.band)
     if args.plot_graph and dendro is not None:
-        plot_graph(G, dendro,
+        plot_graph(GG, dendro,
                    args.patient, args.phase, args.band, ch_int_name_map)
 
 if __name__ == '__main__':
