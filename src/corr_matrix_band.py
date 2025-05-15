@@ -62,9 +62,6 @@ def compute_and_save(patient: str, phase: str, band: str, filttime: int,
         G_filt = nx.from_numpy_array(C_filt)
         logging.info(f"Computed filtered correlation for band {band}")
         Th, Einf, Pinf = compute_threshold_stats(G_filt)
-        plt.plot(Th, Einf, label='Einf')
-        plt.plot(Th, Pinf, label='Pinf')
-        plt.show()
         try:
             Pinf_diff = np.diff(Pinf)
             jumps = np.where(Pinf_diff != 0)[0]
@@ -81,11 +78,11 @@ def compute_and_save(patient: str, phase: str, band: str, filttime: int,
 
 def plot_corr_matrix(matrix: np.ndarray, patient: str, phase: str, band: str):
     out_dir = Path('data') / '250414_preanalysis' / 'per_band_corr' / patient
-    plt.figure()
+    plt.figure(figsize=(10, 10))
     plt.imshow(matrix, vmin=-1, vmax=1)
     plt.colorbar()
     plt.title(f'{patient} {phase} {band}')
-    plt.savefig(out_dir / f'{band}_{phase}_corr.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_corr.pdf', bbox_inches='tight')
     plt.close()
     logging.info("Saved correlation plot")
 
@@ -103,7 +100,7 @@ def plot_entropy(G: nx.Graph, steps: int, patient: str, phase: str, band: str):
     plt.ylabel('Normalized Values')
     plt.legend()
     plt.title(f'Entropy Metrics {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf', bbox_inches='tight')
     plt.close()
     logging.info("Saved entropy plot")
 
@@ -123,7 +120,7 @@ def plot_entropy(G: nx.Graph, steps: int, patient: str, phase: str, band: str):
     plt.legend()
     plt.title(f'Entropy Metrics {patient} {phase} {band}')
     plt.xscale('log')
-    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_entropy.pdf', bbox_inches='tight')
     plt.close()
     logging.info("Saved entropy plot")
 
@@ -131,7 +128,7 @@ def plot_entropy(G: nx.Graph, steps: int, patient: str, phase: str, band: str):
 def plot_dendrogram(linkage_matrix, labels, threshold, ch_int_name_map, patient: str, phase: str, band: str):
     relabel = [ch_int_name_map[n] for n in labels]
     out_dir = Path('data') / '250414_preanalysis' / 'per_band_corr' / patient
-    fig, ax = plt.subplots(figsize=(5, 15))
+    fig, ax = plt.subplots(figsize=(5, 12))
     dendro = dendrogram(linkage_matrix, ax=ax,
                          labels=relabel,
                          color_threshold=threshold,
@@ -146,7 +143,7 @@ def plot_dendrogram(linkage_matrix, labels, threshold, ch_int_name_map, patient:
     tmax = linkage_matrix[::, 2][-1] + 0.1*linkage_matrix[::, 2][-1]
     ax.set_xlim(tmin,tmax)
     plt.title(f'Dendrogram {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{band}_{phase}_dendrogram.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_dendrogram.pdf', bbox_inches='tight')
     fig.tight_layout
     plt.close()
     logging.info("Saved dendrogram plot")
@@ -158,14 +155,14 @@ def plot_graph(GG: nx.Graph, dendro: dict, patient: str, phase: str, band: str, 
     leaf_label_colors = {label: color for label, color in zip(
         dendro['ivl'], dendro['leaves_color_list'])}
     relabel_list = dendro['ivl']
-    node_colors = [leaf_label_colors[label] for label in relabel_list]
+    node_colors = [leaf_label_colors[ch_int_name_map[n]] for n in GG.nodes()]
     widths = [GG[u][v]['weight'] for u, v in GG.edges()]
     ch_int_name_map_ = {k: ch_int_name_map[k] for k in list(GG.nodes())}
     nx.draw(GG, ax=ax, node_size=80, font_size=10,
             width=widths, node_color=node_colors,
             alpha=0.7, with_labels=True, labels=ch_int_name_map_)
     plt.title(f'Network Graph {patient} {phase} {band}')
-    plt.savefig(out_dir / f'{band}_{phase}_graph.pdf')
+    plt.savefig(out_dir / f'{band}_{phase}_graph.pdf', bbox_inches='tight')
     plt.close()
     logging.info("Saved graph plot")
 
@@ -198,7 +195,6 @@ def main():
         spec, L, rho, Trho, tau = compute_laplacian_properties(GG)
         dists = squareform(Trho)
         # find matrix indices where the value is not finite
-        bad_idx = np.where(~np.isfinite(dists))[0]
         Z, labels, tmax = compute_normalized_linkage(dists, GG)
         th, *_ = compute_optimal_threshold(Z)
     if args.plot_dendrogram:
