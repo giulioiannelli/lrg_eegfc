@@ -1,5 +1,38 @@
 from ..shared import *
 
+def build_corr_network(timeseries, filter_type=None, threshold=None, zero_diagonal=True):
+    """
+    Compute a thresholded correlation network from multivariate time series.
+
+    Parameters
+    ----------
+    timeseries : array-like, shape (N, T)
+        Time series data for N signals of length T.
+    filter_type : {'abs', None}, optional
+        If 'abs', use absolute values of correlations before thresholding.
+        Default is None (no filtering).
+    threshold : float, optional
+        Minimum correlation value; entries below this are set to zero.
+        Default is 0.0.
+    zero_diagonal : bool, optional
+        If True, set diagonal entries of the output matrix to zero.
+        Default is True.
+
+    Returns
+    -------
+    C : ndarray, shape (N, N)
+        Thresholded correlation matrix (adjacency), with optional absolute
+        filtering and zeroed diagonal.
+    """
+    C = np.corrcoef(timeseries)
+    if filter_type == 'abs':
+        C = np.abs(C)
+    if threshold is not None:
+        C[C < threshold] = 0
+    if zero_diagonal:
+        np.fill_diagonal(C, 0)
+    return C
+
 def clean_correlation_matrix(X: np.ndarray, rowvar: bool = True):
     """
     Given data matrix X (T×N), returns:
