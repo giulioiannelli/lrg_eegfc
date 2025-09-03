@@ -1,5 +1,49 @@
 from ..shared import *
 
+from lrgsglib.utils import compute_threshold_stats_fast
+
+def find_exact_detachment_threshold(corr_mat):
+    """
+    Find the EXACT threshold where the first node detaches from giant component.
+    Uses binary search on sorted edge weights for maximum efficiency.
+    """
+    # Get all edge weights (upper triangular, no self-loops)
+    n = corr_mat.shape[0]
+    triu_indices = np.triu_indices(n, k=1)
+    edge_weights = np.abs(corr_mat[triu_indices])
+    
+    # Sort edge weights in ascending order
+    sorted_weights = np.sort(edge_weights)
+    
+    # Binary search for the critical threshold
+    left, right = 0, len(sorted_weights) - 1
+    
+    while left < right:
+        mid = (left + right) // 2
+        threshold = sorted_weights[mid]
+        
+        # Create adjacency matrix with threshold
+        adj_matrix = np.abs(corr_mat) >= threshold
+        np.fill_diagonal(adj_matrix, False)  # Remove self-loops
+        
+        # Quick connectivity check using matrix powers
+        # If graph is connected, adj_matrix^n should be all non-zero
+        reach_matrix = adj_matrix.copy().astype(int)
+        for _ in range(n-1):
+            reach_matrix = np.dot(reach_matrix, adj_matrix.astype(int))
+            if np.any(reach_matrix):
+                break
+        
+        # Check if all nodes can reach each other
+        connected = np.all(reach_matrix + reach_matrix.T + np.eye(n) > 0)
+        
+        if connected:
+            left = mid + 1
+        else:
+            right = mid
+    
+    return sorted_weights[left] if left < len(sorted_weights) else sorted_weights[-1]
+
 def build_corr_network(timeseries, filter_type=None, threshold=None, zero_diagonal=True):
     """
     Compute a thresholded correlation network from multivariate time series.
@@ -32,6 +76,13 @@ def build_corr_network(timeseries, filter_type=None, threshold=None, zero_diagon
     if zero_diagonal:
         np.fill_diagonal(C, 0)
     return C
+
+def find_threshold_jumps(G_filt):
+    Th, Einf, Pinf = compute_threshold_stats_fast(G_filt)
+    Pinf_diff = np.diff(Pinf)
+    jumps = np.where(Pinf_diff != 0)[0]
+    return Th, jumps
+
 
 def clean_correlation_matrix(X: np.ndarray, rowvar: bool = True):
     """

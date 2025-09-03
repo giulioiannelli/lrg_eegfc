@@ -6,9 +6,9 @@ It requires `conda` to be installed locally in path `$HOME/anaconda3/`. Start cl
 git clone https://github.com/giulioiannelli/lrg_eegfc
 git submodule update --init --recursive
 ```
-To update the `` submodule run
+To update the `lrgsglib` submodule run
 ```
-cd lrgsglib-public
+cd lrgsglib
 git fetch origin
 git merge origin/main
 ```

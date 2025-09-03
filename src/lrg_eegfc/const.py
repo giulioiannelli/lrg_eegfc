@@ -1,5 +1,5 @@
 from pathlib import Path
-
+#
 mat_path = Path('data') / 'stereoeeg_patients'
 patients_list = [p.name for p in Path(mat_path).iterdir() 
                  if p.is_dir() and p.name.startswith('Pat_')]
