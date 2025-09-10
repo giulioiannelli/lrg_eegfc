@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "/home/opisthofulax/anaconda3/envs/lapbrain/bin/python",
+    "python.analysis.extraPaths": ["/home/opisthofulax/Documents/research+/brain_network/lrg_eegfc/lrgsglib/src/"]
+}

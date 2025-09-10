@@ -7,5 +7,5 @@ import numpy as np
 import pandas as pd
 
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Callable
 from scipy.io import loadmat
