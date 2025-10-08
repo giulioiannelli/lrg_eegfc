@@ -41,6 +41,7 @@ dependencies = [
     "scipy>=1.10.0",
     "matplotlib>=3.7.0",
     "h5py>=3.8.0",
+    "networkx>=3.0",
     "emd>=0.8.0",
     "lrgsglib",
 ]
@@ -72,6 +73,9 @@ Homepage = "https://github.com/giulioiannelli/lrg_eegfc"
 Repository = "https://github.com/giulioiannelli/lrg_eegfc"
 Documentation = "https://github.com/giulioiannelli/lrg_eegfc#readme"
 "Bug Tracker" = "https://github.com/giulioiannelli/lrg_eegfc/issues"
+
+[project.scripts]
+lrg-eegfc-corr = "lrg_eegfc.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
