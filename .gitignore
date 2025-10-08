@@ -3,3 +3,13 @@ data/
 
 *.mp4
 *.pyc
+__pycache__/
+*.egg-info/
+.build/
+build/
+dist/
+.eggs/
+*.log
+.DS_Store
+.env
+.venv/
