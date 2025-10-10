@@ -2,22 +2,28 @@ from ..shared import *
 from ..config.const import *
 from typing import Optional, Tuple, Union
 import networkx as nx
+from scipy.spatial.distance import squareform
 
-from lrgsglib.utils import compute_threshold_stats_fast, bandpass_sos
+from lrgsglib.utils import compute_threshold_stats_fast, bandpass_sos, \
+    get_giant_component_leftoff
+from lrgsglib.utils.lrg import compute_laplacian_properties, \
+    compute_optimal_threshold, compute_normalized_linkage
 
 __all__ = [
     'apply_threshold_filter',
     'build_corr_network',
+    'process_network_for_phase',
     'find_exact_detachment_threshold',
     'find_threshold_jumps',
     'build_corrmat_perband',
+    'build_corrmat_single_band',
     'clean_correlation_matrix'
 ]
-
-
+#
 def apply_threshold_filter(matrix: np.ndarray, threshold: float) -> np.ndarray:
     """
-    Apply threshold filtering to a matrix by setting values below threshold to zero.
+    Apply threshold filtering to a matrix by setting values below threshold to 
+    zero.
     
     Parameters
     ----------
@@ -34,8 +40,7 @@ def apply_threshold_filter(matrix: np.ndarray, threshold: float) -> np.ndarray:
     filtered_matrix = matrix.copy()
     filtered_matrix[filtered_matrix < threshold] = 0
     return filtered_matrix
-
-
+#
 def build_corr_network(
         timeseries: np.ndarray, 
         filter_type: Optional[str] = None, 
@@ -72,6 +77,22 @@ def build_corr_network(
     # Compute correlation matrix
     C = np.corrcoef(timeseries)
     
+    # Check for non-finite values in correlation matrix
+    if not np.all(np.isfinite(C)):
+        import warnings
+        warnings.warn(
+            "Correlation matrix contains non-finite values. "
+            "This may be due to constant or invalid time series. "
+            "Replacing NaN/Inf with zeros.",
+            RuntimeWarning
+        )
+        C = np.nan_to_num(C, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # Apply spectral cleaning before zeroing diagonal
+    if spectral_cleaning:
+        C_clean, _, _, _, _, _ = clean_correlation_matrix(C.T, rowvar=False)
+        C = C_clean
+
     # Apply filters in sequence
     if filter_type == 'abs':
         C = np.abs(C)
@@ -79,16 +100,141 @@ def build_corr_network(
     if threshold is not None:
         C = apply_threshold_filter(C, threshold)
     
-    # Apply spectral cleaning before zeroing diagonal
-    if spectral_cleaning:
-        C_clean, _, _, _, _, _ = clean_correlation_matrix(C.T, rowvar=False)
-        C = C_clean
-    
     if zero_diagonal:
         np.fill_diagonal(C, 0)
     
     return C
-
+#
+def process_network_for_phase(
+        data_pat_phase_ts: np.ndarray,
+        fs: float,
+        band_name: str,
+        correlation_protocol: dict,
+        all_labels,
+        jump_index_to_use: int = 0,
+        scaling_factor: float = 0.98,
+        linkage_method: str = 'ward',
+        filter_order: int = 4) -> Tuple[Optional[nx.Graph], 
+                                               Optional[dict], 
+                                               Optional[np.ndarray], 
+                                               Optional[float], 
+                                               Optional[np.ndarray],
+                                               Optional[np.ndarray]]:
+    """
+    Process network analysis for a single phase and frequency band.
+    
+    Builds correlation matrices, creates filtered networks, extracts the giant 
+    component, and performs hierarchical clustering analysis with optimal 
+    threshold detection.
+    
+    Parameters
+    ----------
+    data_pat_phase_ts : np.ndarray
+        Time series data for the specific patient phase.
+    fs : float
+        Sampling frequency of the time series data.
+    band_name : str
+        Name of the frequency band to analyze.
+    correlation_protocol : dict
+        Parameters for correlation network construction (passed to 
+        build_corrmat_perband).
+    all_labels : pd.Series or dict-like
+        Labels mapping for network nodes (typically brain region names).
+    jump_index_to_use : int, optional
+        Index of the threshold jump to use for network filtering (0-based). 
+        Default is 0.
+    scaling_factor : float, optional
+        Scaling factor for optimal threshold computation. Default is 0.98.
+    linkage_method : str, optional
+        Method for hierarchical clustering linkage. Default is 'ward'.
+    filter_order : int, optional
+        Filter order for bandpass filtering. Default is 4.
+    
+    Returns
+    -------
+    G_giant : nx.Graph or None
+        Giant component of the filtered network, or None if no valid network 
+        found.
+    labeldict : dict or None
+        Dictionary mapping node indices to labels for nodes in giant component.
+    lnkgM : np.ndarray or None
+        Linkage matrix from hierarchical clustering.
+    clTh : float or None
+        Optimal clustering threshold.
+    corr_mat : np.ndarray or None
+        Correlation matrix for the specified frequency band.
+    dists : np.ndarray or None
+        Distance matrix computed from Laplacian properties.
+        
+    Notes
+    -----
+    Returns (None, None, None, None, None, None) if the network has no nodes 
+    after filtering or if the giant component is empty. The function performs 
+    automatic threshold filtering based on percolation analysis using the 
+    specified jump index.
+    """
+    # Build correlation matrices per band
+    corr_mat = build_corrmat_single_band(
+        data_pat_phase_ts, fs, BRAIN_BANDS[band_name],
+        jump_index=jump_index_to_use, corr_network_params=correlation_protocol,
+        filter_order=filter_order
+    )
+    
+    # Extract correlation matrix for the specified band
+    
+    # Create network and remove zero-weight edges and isolated nodes
+    G = nx.from_numpy_array(corr_mat)
+    G.remove_edges_from([(u, v) for u, v, d in G.edges(data=True) 
+                         if d['weight'] == 0])
+    G.remove_nodes_from(list(nx.isolates(G)))
+    
+    # Check if network has any nodes after filtering
+    if len(G.nodes()) == 0:
+        return None, None, None, None, None, None
+    
+    # Extract giant component
+    G_giant, removed_nodes = get_giant_component_leftoff(G)
+    
+    # Check if giant component is empty
+    if len(G_giant.nodes()) == 0:
+        return None, None, None, None, None, None
+    
+    # Create filtered labels dictionary for nodes in giant component
+    labeldict = {k: v for k, v in all_labels.to_dict().items() 
+                 if k in G_giant.nodes()}
+    
+    # Compute Laplacian properties and hierarchical clustering
+    spect, L, rho, Trho, tau = compute_laplacian_properties(G_giant, tau=None)
+    
+    # Check for non-finite values in the resistance distance matrix
+    if not np.all(np.isfinite(Trho)):
+        import warnings
+        warnings.warn(
+            f"Band '{band_name}': Non-finite values detected in resistance distance matrix. "
+            f"This may indicate numerical instabilities in the correlation matrix or Laplacian computation. "
+            f"Skipping this band for this phase.",
+            RuntimeWarning
+        )
+        return None, None, None, None, None, None
+    
+    dists = squareform(Trho)
+    
+    # Additional check for the condensed distance matrix
+    if not np.all(np.isfinite(dists)):
+        import warnings
+        warnings.warn(
+            f"Band '{band_name}': Non-finite values detected in condensed distance matrix. "
+            f"Skipping this band for this phase.",
+            RuntimeWarning
+        )
+        return None, None, None, None, None, None
+    
+    lnkgM, label_list, _ = compute_normalized_linkage(dists, G_giant, 
+                                                      method=linkage_method)
+    clTh, *_ = compute_optimal_threshold(lnkgM, 
+                                         scaling_factor=scaling_factor)
+    
+    return G_giant, labeldict, lnkgM, clTh, corr_mat, dists
 
 
 
@@ -265,7 +411,7 @@ def _select_threshold_from_jumps(corr_mat_initial, jump_index=0, band_name=""):
 
 def build_corrmat_perband(data_ts, fs, bandpass_func: Callable = bandpass_sos, brain_bands: dict = BRAIN_BANDS, 
                           return_jump_info=False, apply_threshold_filtering=True, 
-                          corr_network_params: dict={'threshold': 0}, jump_index: int = 0):
+                          corr_network_params: dict={'threshold': 0}, jump_index: int = 0, filter_order: int = 4):
     """
     Build correlation matrices per frequency band.
     
@@ -294,6 +440,8 @@ def build_corrmat_perband(data_ts, fs, bandpass_func: Callable = bandpass_sos, b
         Index of the jump to use for threshold selection (0-based).
         jump_index=0 means 1 giant component, jump_index=1 means 2 components, etc.
         Default is 0 (first jump, single giant component).
+    filter_order : int, optional
+        Filter order for bandpass filtering. Default is 4.
     
     Returns:
     --------
@@ -319,8 +467,32 @@ def build_corrmat_perband(data_ts, fs, bandpass_func: Callable = bandpass_sos, b
     band_jump_info = {}
     
     for band_name, (low, high) in brain_bands.items():
+        # Adjust filter order for narrow bands to avoid numerical instabilities
+        # For very narrow bands (< 1% of Nyquist), use order 1
+        nyquist = fs / 2.0
+        bandwidth_ratio = (high - low) / nyquist
+        if bandwidth_ratio < 0.01 and filter_order > 1:
+            adjusted_order = 1
+            warnings.warn(
+                f"Band '{band_name}': Reducing filter order from {filter_order} to {adjusted_order} "
+                f"for narrow band ({low}-{high} Hz, {bandwidth_ratio:.4f} of Nyquist) "
+                f"to avoid numerical instabilities.",
+                RuntimeWarning
+            )
+        else:
+            adjusted_order = filter_order
+        
         # Apply bandpass filter
-        filter_data = bandpass_func(data_ts, low, high, fs, 1)
+        filter_data = bandpass_func(data_ts, low, high, fs, adjusted_order)
+        
+        # Check if filtered data contains non-finite values
+        if not np.all(np.isfinite(filter_data)):
+            warnings.warn(
+                f"Band '{band_name}': Bandpass filtering produced non-finite values. "
+                f"Skipping this band.",
+                RuntimeWarning
+            )
+            continue
         
         if apply_threshold_filtering:
             # Build initial correlation network for threshold analysis
@@ -390,6 +562,177 @@ def build_corrmat_perband(data_ts, fs, bandpass_func: Callable = bandpass_sos, b
         return corr_mat_band, band_jump_info
     else:
         return corr_mat_band
+
+
+def build_corrmat_single_band(
+        data_ts: np.ndarray, 
+        fs: float, 
+        band: Tuple[float, float],
+        bandpass_func: Callable = bandpass_sos,
+        return_jump_info: bool = False,
+        apply_threshold_filtering: bool = True,
+        corr_network_params: Optional[dict] = None,
+        jump_index: int = 0,
+        band_name: str = "",
+        filter_order: int = 4) -> Union[np.ndarray, Tuple[np.ndarray, dict]]:
+    """
+    Build correlation matrix for a single frequency band.
+    
+    Parameters
+    ----------
+    data_ts : np.ndarray
+        Time series data.
+    fs : float
+        Sampling frequency.
+    band : tuple of (float, float)
+        Frequency band as (low, high) frequency pair.
+    bandpass_func : callable, optional
+        Bandpass filtering function (e.g., bandpass_sos). Default is bandpass_sos.
+    return_jump_info : bool, optional
+        If True, also returns the jump information for threshold selection.
+        Default is False.
+    apply_threshold_filtering : bool, optional
+        If True, applies automatic threshold filtering based on jump detection.
+        If False, uses only the parameters from corr_network_params.
+        Default is True.
+    corr_network_params : dict or None, optional
+        Parameters to pass to build_corr_network function.
+        Default is {'threshold': 0} if not provided.
+        Common parameters: threshold, filter_type, zero_diagonal.
+    jump_index : int, optional
+        Index of the jump to use for threshold selection (0-based).
+        jump_index=0 means 1 giant component, jump_index=1 means 2 components, etc.
+        Default is 0 (first jump, single giant component).
+    band_name : str, optional
+        Name of the band for warning messages. Default is empty string.
+    filter_order : int, optional
+        Filter order for bandpass filtering. Default is 4.
+    
+    Returns
+    -------
+    corr_mat : np.ndarray
+        Correlation matrix for the specified frequency band.
+    jump_info : dict, optional
+        Dictionary with jump information (only if return_jump_info=True).
+        
+    Notes
+    -----
+    - When apply_threshold_filtering=False, threshold statistics are not computed,
+      improving performance when jump information is not needed.
+    - corr_network_params allows fine-tuning of correlation matrix computation.
+    - If both apply_threshold_filtering=True and corr_network_params has 'threshold',
+      the automatic threshold from jump detection overrides the manual threshold.
+    - The function validates that the resulting network has the expected number of
+      connected components (jump_index + 1). Issues a warning if validation fails.
+    """
+    import networkx as nx
+    import warnings
+    
+    # Set default parameters if not provided
+    if corr_network_params is None:
+        corr_network_params = {'threshold': 0}
+    
+    low, high = band
+    
+    # Adjust filter order for narrow bands to avoid numerical instabilities
+    # For very narrow bands (< 1% of Nyquist), use order 1
+    nyquist = fs / 2.0
+    bandwidth_ratio = (high - low) / nyquist
+    if bandwidth_ratio < 0.01 and filter_order > 1:
+        adjusted_order = 1
+        import warnings
+        warnings.warn(
+            f"Reducing filter order from {filter_order} to {adjusted_order} "
+            f"for narrow band ({low}-{high} Hz, {bandwidth_ratio:.4f} of Nyquist) "
+            f"to avoid numerical instabilities.",
+            RuntimeWarning
+        )
+    else:
+        adjusted_order = filter_order
+    
+    # Apply bandpass filter
+    filter_data = bandpass_func(data_ts, low, high, fs, adjusted_order)
+    
+    # Check if filtered data contains non-finite values
+    if not np.all(np.isfinite(filter_data)):
+        warnings.warn(
+            f"Band ({low}-{high} Hz): Bandpass filtering produced non-finite values. "
+            f"This indicates severe numerical instabilities. Returning None.",
+            RuntimeWarning
+        )
+        if return_jump_info:
+            return None, None
+        return None
+    
+    if apply_threshold_filtering:
+        # Build initial correlation network for threshold analysis
+        corr_mat_initial = build_corr_network(filter_data, 
+                                              **corr_network_params)
+        
+        # Select threshold using jump analysis
+        threshold_info = _select_threshold_from_jumps(corr_mat_initial, 
+                                                      jump_index, band_name)
+        
+        # Build final correlation network with chosen threshold
+        # Override threshold parameter with automatically detected one
+        final_params = corr_network_params.copy()
+        final_params['threshold'] = threshold_info['chosen_threshold']
+        corr_mat = build_corr_network(filter_data, **final_params)
+        
+        # Validate number of connected components
+        G_final = nx.from_numpy_array(corr_mat)
+        # Remove isolated nodes (nodes with no edges above threshold)
+        G_final.remove_nodes_from(list(nx.isolates(G_final)))
+        
+        if G_final.number_of_nodes() > 0:  # Only check if graph has nodes
+            n_components = nx.number_connected_components(G_final)
+            expected_components = threshold_info['expected_components']
+            
+            if n_components != expected_components:
+                warnings.warn(
+                    f"Band '{band_name}' ({low}-{high} Hz): Expected "
+                    f"{expected_components} connected components "
+                    f"(jump_index={threshold_info['jump_index']}) but found "
+                    f"{n_components} components. Network topology may be "
+                    f"unexpected at threshold "
+                    f"{threshold_info['chosen_threshold']:.6f}.",
+                    UserWarning
+                )
+            
+            # Store validation info
+            threshold_info['actual_components'] = n_components
+            threshold_info['validation_passed'] = (n_components == 
+                                                   expected_components)
+        else:
+            warnings.warn(
+                f"Band '{band_name}' ({low}-{high} Hz): Threshold "
+                f"{threshold_info['chosen_threshold']:.6f} resulted in no "
+                f"connected nodes. All correlations below threshold.",
+                UserWarning
+            )
+            threshold_info['actual_components'] = 0
+            threshold_info['validation_passed'] = False
+    else:
+        # Build correlation network with provided parameters only
+        # No threshold statistics computation
+        corr_mat = build_corr_network(filter_data, **corr_network_params)
+        
+        # Set empty jump info if needed for return consistency
+        if return_jump_info:
+            threshold_info = {
+                'jumps': None,
+                'chosen_jump': None,
+                'chosen_threshold': corr_network_params.get('threshold', 0),
+                'jump_index': None,
+                'expected_components': None,
+                'actual_components': None,
+                'validation_passed': None
+            }
+    
+    if return_jump_info:
+        return corr_mat, threshold_info
+    else:
+        return corr_mat
 
 
 def clean_correlation_matrix(X: np.ndarray, rowvar: bool = True):

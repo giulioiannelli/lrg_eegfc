@@ -1,4 +1,4 @@
 {
     "python.defaultInterpreterPath": "/home/opisthofulax/anaconda3/envs/lapbrain/bin/python",
-    "python.analysis.extraPaths": ["/home/opisthofulax/Documents/research+/brain_network/lrg_eegfc/lrgsglib/src/"]
+    "python.analysis.extraPaths": ["/home/opisthofulax/anaconda3/envs/lapbrain/lib/python312.zip", "/home/opisthofulax/anaconda3/envs/lapbrain/lib/python3.12", "/home/opisthofulax/anaconda3/envs/lapbrain/lib/python3.12/lib-dynload", "/home/opisthofulax/anaconda3/envs/lapbrain/lib/python3.12/site-packages", "/home/opisthofulax/Documents/research+/brain_network/lrg_eegfc/src", "/home/opisthofulax/Documents/research+/brain_network/lrg_eegfc/lrgsglib/src"]
 }

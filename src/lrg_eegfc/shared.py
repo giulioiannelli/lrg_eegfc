@@ -9,3 +9,4 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Callable
 from scipy.io import loadmat
+from scipy.cluster.hierarchy import dendrogram, optimal_leaf_ordering
