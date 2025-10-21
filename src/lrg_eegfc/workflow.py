@@ -9,7 +9,7 @@ from typing import Dict, Optional
 import networkx as nx
 import numpy as np
 
-from lrgsglib.config.funcs import bandpass_sos
+from lrgsglib.utils.basic.signals import bandpass_sos
 
 from .constants import BRAIN_BANDS
 from .correlation import (

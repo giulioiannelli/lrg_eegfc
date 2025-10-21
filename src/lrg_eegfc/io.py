@@ -46,16 +46,61 @@ class PatientRecording:
     channel_metadata: Optional[pd.DataFrame] = None
 
 
-def load_mat_file(patient: str, phase: str, root_path: Path) -> Mapping[str, object]:
-    """Load a ``.mat`` file using :func:`scipy.io.loadmat` with an ``h5py`` fallback."""
+def load_mat_file(
+    patient: str,
+    phase: str,
+    root_path: Path,
+    *,
+    fields: Optional[Iterable[str]] = None,
+) -> Mapping[str, object]:
+    """Load a ``.mat`` file using :func:`scipy.io.loadmat` with an ``h5py`` fallback.
+
+    Parameters
+    ----------
+    patient, phase, root_path:
+        Identify the ``.mat`` file to read.
+    fields:
+        Optional iterable of variable names to load from the ``.mat`` file.  Supplying
+        this limits the amount of data parsed which can dramatically reduce IO for
+        large recordings.  When omitted the full file content is returned, mimicking
+        :func:`scipy.io.loadmat`.
+    """
 
     mat_file = root_path / patient / f"{phase}.mat"
+    fields_tuple = tuple(fields) if fields is not None else None
+    load_kwargs = {"variable_names": fields_tuple} if fields_tuple is not None else {}
+
     try:
-        return loadmat(mat_file)
+        return loadmat(mat_file, **load_kwargs)
     except NotImplementedError:
         logging.debug("Falling back to h5py for %s", mat_file)
         with h5py.File(mat_file, "r") as handle:
-            return {key: np.array(value) for key, value in handle.items()}
+            keys: Iterable[str]
+            if fields_tuple is None:
+                keys = handle.keys()
+            else:
+                keys = (name for name in fields_tuple if name in handle)
+            return {key: np.array(handle[key]) for key in keys}
+
+
+def _extract_timeseries(
+    mat: Mapping[str, object],
+    patient: str,
+    phase: str,
+) -> np.ndarray:
+    """Return the canonical ``(channels, samples)`` arrangement from ``mat``."""
+
+    if "Data" not in mat:
+        raise KeyError(f"'Data' entry not found in MAT file for {patient} {phase}.")
+
+    data = np.asarray(mat["Data"])
+    if data.ndim != 2:
+        raise ValueError(
+            f"Expected 2-D SEEG matrix for {patient} {phase}; received shape {data.shape}."
+        )
+    if data.shape[0] > data.shape[1]:
+        data = data.T
+    return data
 
 
 def load_timeseries(patient: str, phase: str, root_path: Path) -> np.ndarray:
@@ -66,15 +111,8 @@ def load_timeseries(patient: str, phase: str, root_path: Path) -> np.ndarray:
     returns the canonical ``(channels, samples)`` layout.
     """
 
-    mat = load_mat_file(patient, phase, root_path)
-    data = np.asarray(mat["Data"])
-    if data.ndim != 2:
-        raise ValueError(
-            f"Expected 2-D SEEG matrix for {patient} {phase}; received shape {data.shape}."
-        )
-    if data.shape[0] > data.shape[1]:
-        data = data.T
-    return data
+    mat = load_mat_file(patient, phase, root_path, fields=("Data",))
+    return _extract_timeseries(mat, patient, phase)
 
 
 def _load_parameters(mat: Mapping[str, object]) -> Mapping[str, float]:
@@ -132,9 +170,14 @@ def load_patient_dataset(
     metadata = load_patient_metadata(patient, root_path)
 
     for phase in phases:
-        mat = load_mat_file(patient, phase, root_path)
+        mat = load_mat_file(
+            patient,
+            phase,
+            root_path,
+            fields=("Data", "Parameters"),
+        )
         dataset[phase] = PatientRecording(
-            timeseries=load_timeseries(patient, phase, root_path),
+            timeseries=_extract_timeseries(mat, patient, phase),
             parameters=_load_parameters(mat),
             channel_metadata=metadata,
         )
