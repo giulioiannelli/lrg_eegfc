@@ -12,11 +12,7 @@ import numpy as np
 from lrgsglib.utils.basic.signals import bandpass_sos
 
 from .constants import BRAIN_BANDS
-from .correlation import (
-    apply_threshold_filter,
-    build_correlation_network,
-    find_threshold_jumps,
-)
+from .utils.corrmat import apply_threshold_filter, build_corr_network, find_threshold_jumps
 from .io import load_timeseries
 
 __all__ = ["BandComputationResult", "compute_band_connectivity"]
@@ -56,10 +52,10 @@ def compute_band_connectivity(
     low, high = BRAIN_BANDS[band]
     filtered = bandpass_sos(data, low, high, sample_rate, filter_order)
 
-    corr = build_correlation_network(filtered, filter_type="abs", zero_diagonal=True)
+    corr = build_corr_network(filtered, filter_type="abs", zero_diagonal=True)
     graph = nx.from_numpy_array(corr)
 
-    Th, jumps, *_ = find_threshold_jumps(graph, return_stats=False)
+    Th, jumps = find_threshold_jumps(graph)
     if jumps.size == 0:
         threshold = 0.0
         jump_stats = {
