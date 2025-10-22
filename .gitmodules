@@ -1,0 +1,4 @@
+[submodule "lrgsglib"]
+	path = lrgsglib
+	url = https://github.com/giulioiannelli/lrgsglib
+	branch = main
