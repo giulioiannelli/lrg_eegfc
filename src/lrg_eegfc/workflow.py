@@ -13,7 +13,7 @@ from lrgsglib.utils.basic.signals import bandpass_sos
 
 from .constants import BRAIN_BANDS
 from .utils.corrmat import apply_threshold_filter, build_corr_network, find_threshold_jumps
-from .io import load_timeseries
+from .utils.datamanag.patient import load_timeseries
 
 __all__ = ["BandComputationResult", "compute_band_connectivity"]
 

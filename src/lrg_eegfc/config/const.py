@@ -9,55 +9,44 @@ dependencies.
 from __future__ import annotations
 #
 from pathlib import Path
-from typing import Dict, Iterable, Tuple, List
+from typing import Dict, Tuple, List
 #
 __all__ = [
-    "BRAIN_BANDS",
-    "BRAIN_BAND_TEX_DICT",
-    "sEEG_DATAPATH",
-    "phase_labels",
-    "patients_list",
-    "param_keys_list",
-    "PATIENTS_LIST",
-    "PHASE_LABELS",
-    "PARAMETER_KEYS"
+    'sEEG_DATAPATH',
+    'PATIENTS_LIST',
+    'PHASE_LABELS',
+    'PARAMETER_KEYS',
+    'BRAIN_BANDS_NAMES',
+    'BRAIN_BANDS_FREQ',
+    'BRAIN_BANDS',
+    'BRAIN_BANDS_TEX_NAMES',
+    'BRAIN_BAND_TEX_DICT'
 ]
 #
 sEEG_DATAPATH = Path('data') / 'stereoeeg_patients'
-patients_list = [p.name for p in Path(sEEG_DATAPATH).iterdir() 
-                 if p.is_dir() and p.name.startswith('Pat_')]
-#
-phase_labels = ['rsPre', 'taskLearn', 'taskTest', 'rsPost']
-param_keys_list = [
-    'fs', 'fcutHigh', 'fcutLow', 'filter_order', 
-    'NotchFilter', 'DataDimensions'
-]
 #: Patients available in the LRG EEG-FC dataset.
 PATIENTS_LIST: List[str] = [p.name for p in Path(sEEG_DATAPATH).iterdir() 
                  if p.is_dir() and p.name.startswith('Pat_')]
-
 #: Recording phases expected in the publicly shared SEEG datasets.
-PHASE_LABELS: Tuple[str, ...] = ("rsPre", "taskLearn", "taskTest", "rsPost")
-
+PHASE_LABELS: Tuple[str, ...] = ('rsPre', 'taskLearn', 'taskTest', 'rsPost')
 #: Keys typically embedded inside the ``Parameters`` struct of the ``.mat``
 #: files distributed with the LRG datasets.
 PARAMETER_KEYS: Tuple[str, ...] = (
-    "fs",
-    "fcutHigh",
-    "fcutLow",
-    "filter_order",
-    "NotchFilter",
-    "DataDimensions",
+    'fs',
+    'fcutHigh',
+    'fcutLow',
+    'filter_order',
+    'NotchFilter',
+    'DataDimensions',
 )
-#
 #: Brain bands keys
 BRAIN_BANDS_NAMES: List[str] = [
-    "delta",
-    "theta",
-    "alpha",
-    "beta",
-    "low_gamma",
-    "high_gamma"
+    'delta',
+    'theta',
+    'alpha',
+    'beta',
+    'low_gamma',
+    'high_gamma'
 ]
 #: Brain bands frequency tuples
 BRAIN_BANDS_FREQ: List[Tuple[float, float]] = [
