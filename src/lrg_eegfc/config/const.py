@@ -20,7 +20,8 @@ __all__ = [
     'BRAIN_BANDS_FREQ',
     'BRAIN_BANDS',
     'BRAIN_BANDS_TEX_NAMES',
-    'BRAIN_BAND_TEX_DICT'
+    'BRAIN_BAND_TEX_DICT',
+    'DEFAULT_N_SURROGATES',
 ]
 #
 sEEG_DATAPATH = Path('data') / 'stereoeeg_patients'
@@ -74,3 +75,5 @@ BRAIN_BAND_TEX_DICT: Dict[str, str] = {
     band: tex_label
     for band, tex_label in zip(BRAIN_BANDS_NAMES, BRAIN_BANDS_TEX_NAMES)
 }
+#: Default number of surrogates for coherence-based FC null model estimation
+DEFAULT_N_SURROGATES: int = 200

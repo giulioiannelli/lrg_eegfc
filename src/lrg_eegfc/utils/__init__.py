@@ -7,3 +7,4 @@ from .datamanag.patient import (
     load_timeseries,
 )
 from .corrmat import *  # noqa: F401,F403
+from .coherence import *  # noqa: F401,F403
