@@ -25,5 +25,31 @@ from .utils.corrmat import (
     process_network_for_phase,
 )
 from .workflow import BandComputationResult, compute_band_connectivity
+from .workflow_msc import MSCResult, compute_msc_matrix, load_msc_matrix, get_msc_cache_path, compute_msc_for_patient
+from .workflow_corr import CorrResult, compute_corr_matrix, load_corr_matrix, get_corr_cache_path, compute_corr_for_patient
+from .workflow_lrg import LRGResult, compute_lrg_analysis, load_lrg_result, get_lrg_cache_path, compute_lrg_for_patient
+from .workflow_cleaning import (
+    CleanedCorrResult,
+    clean_correlation_matrix_full,
+    load_cleaned_corr_matrix,
+    get_cleaned_corr_cache_path,
+    compute_cleaned_corr_for_patient,
+)
+from .compare import (
+    UltrametricComparison,
+    compare_ultrametric_matrices,
+    compare_fc_methods,
+    compare_phases,
+    aggregate_comparisons,
+    batch_compare_fc_methods,
+    batch_compare_phases,
+)
+from .visuals.compare import plot_fc_comparison
+from .visuals.reorganization import (
+    compute_cluster_membership_correlation,
+    plot_phase_reorganization,
+    plot_reorganization_distance_matrix,
+)
+from .batch_compute import compute_all_matrices
 from .utils import *  # noqa: F401,F403
 from .config.const import *  # noqa: F401,F403

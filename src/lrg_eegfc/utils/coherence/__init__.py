@@ -40,6 +40,7 @@ def coherence_fc_pipeline(
     sparsify: str = "soft",
     nperseg: int = 256,
     noverlap: int | None = None,
+    batch_size: int = 64,
     zero_diagonal: bool = True,
     rng: np.random.Generator | None = None,
     verbose: bool = False,
@@ -74,6 +75,9 @@ def coherence_fc_pipeline(
     noverlap : int, optional
         Number of overlapping samples between segments. If None, uses nperseg // 2
         (default: None)
+    batch_size : int, optional
+        Number of Welch segments to process per batch; larger values use more memory
+        but reduce Python/FFT overhead (default: 64)
     zero_diagonal : bool, optional
         If True, set diagonal elements to zero (no self-loops) (default: True)
     rng : np.random.Generator, optional
@@ -142,6 +146,7 @@ def coherence_fc_pipeline(
         fs,
         nperseg=nperseg,
         noverlap=noverlap,
+        batch_size=batch_size,
     )
     if verbose:
         print(f"  [2/5] MSC computation (Welch): {time.time() - t0:.3f}s")

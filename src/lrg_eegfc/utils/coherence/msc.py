@@ -11,6 +11,7 @@ from typing import Dict, Tuple
 import numpy as np
 from numpy.typing import NDArray
 from scipy.signal import get_window
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 __all__ = [
@@ -24,6 +25,7 @@ def compute_msc_welch(
     fs: float,
     nperseg: int = 256,
     noverlap: int | None = None,
+    batch_size: int = 64,
 ) -> Tuple[NDArray, NDArray]:
     """
     Compute magnitude-squared coherence using vectorized Welch's method (fast).
@@ -73,64 +75,47 @@ def compute_msc_welch(
 
     # Calculate number of segments
     step = nperseg - noverlap
-    n_segments = (L - noverlap) // step
+    segments = sliding_window_view(X, window_shape=nperseg, axis=1)[:, ::step, :]
+    n_segments = segments.shape[1]
+    if n_segments == 0:
+        raise ValueError("nperseg larger than signal length")
 
     # Frequency array (one-sided for real signals)
     freqs = np.fft.rfftfreq(nperseg, 1.0 / fs)
     F = len(freqs)
 
     # Get Hanning window
-    window = get_window('hann', nperseg)
+    window = get_window('hann', nperseg).astype(X.dtype, copy=False)
 
-    # Normalization factor for the window
-    scale = 1.0 / (fs * (window * window).sum())
+    # Normalization factor for the window (includes averaging over segments)
+    scale = 1.0 / (fs * (window * window).sum() * n_segments)
 
     # Initialize cross-spectral density matrix
     CSD = np.zeros((N, N, F), dtype=complex)
 
-    # Process each segment
-    for seg_idx in range(n_segments):
-        start = seg_idx * step
-        end = start + nperseg
+    # Process segments in batches to reduce Python overhead
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
 
-        if end > L:
-            break
-
-        # Extract segment for all channels: shape (N, nperseg)
-        segment = X[:, start:end]
-
-        # Apply window to all channels: (N, nperseg) * (nperseg,) -> (N, nperseg)
-        windowed = segment * window
-
-        # FFT all channels: shape (N, F)
-        fft_data = np.fft.rfft(windowed, n=nperseg, axis=1)
-
-        # Compute cross-spectral density for all pairs
-        # CSD[i,j,f] = FFT_i[f] * conj(FFT_j[f])
-        # Use outer product: fft_data[:, None, :] (N,1,F) * conj(fft_data[None, :, :]) (1,N,F)
-        # Result: (N, N, F)
-        CSD += fft_data[:, None, :] * np.conj(fft_data[None, :, :])
+    for start in range(0, n_segments, batch_size):
+        stop = start + batch_size
+        # (N, B, nperseg)
+        block = segments[:, start:stop, :] * window[None, None, :]
+        # FFT over the last axis -> (N, B, F)
+        fft_block = np.fft.rfft(block, n=nperseg, axis=2)
+        # Accumulate cross-spectral density for the batch
+        CSD += np.einsum('nbf,mbf->nmf', fft_block, np.conj(fft_block), optimize='greedy')
 
     # Average over segments and apply scaling
-    CSD *= scale / n_segments
+    CSD *= scale
 
     # Compute magnitude-squared coherence
-    # Coh[i,j,f] = |CSD[i,j,f]|^2 / (CSD[i,i,f] * CSD[j,j,f])
-
-    # Extract auto-spectra (PSD) along diagonal
-    # CSD[i, i, :] for all i gives the PSD for each channel
     PSD = np.real(np.array([CSD[i, i, :] for i in range(N)]))  # shape: (N, F)
 
-    # Compute MSC for all pairs using vectorized operations
-    # PSD[i,f] * PSD[j,f] for all i,j pairs
-    # PSD[:, None, :] (N,1,F) * PSD[None, :, :] (1,N,F) = (N,N,F)
     denom = PSD[:, None, :] * PSD[None, :, :]
 
-    # Compute |CSD|^2
     CSD_mag_sq = np.abs(CSD) ** 2
 
-    # Coherence: |CSD|^2 / (PSD_i * PSD_j)
-    # Use np.divide with where to handle division by zero
     Coh = np.divide(CSD_mag_sq, denom, out=np.zeros((N, N, F)), where=denom > 0)
 
     # Set diagonal to 1 (coherence with self)
